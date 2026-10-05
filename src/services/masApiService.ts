@@ -4,6 +4,8 @@ import { ApiConfiguration, MASRateRecord } from '../types/sora';
 export const MAS_OFFICIAL_DATASTORE_URL =
   'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-308d-4bd2-832d-7680e649636b&limit=100&sort=end_of_day%20desc';
 
+export const REQUIRED_KEY_ID = 'b1933d67-f59a-4985-811c-5d6daf198a5d';
+
 export interface FetchResult {
   records: MASRateRecord[];
   isFallback: boolean;
@@ -36,6 +38,7 @@ export class MasApiService {
       const response = await fetch(targetUrl, {
         headers: {
           Accept: 'application/json',
+          KeyId: REQUIRED_KEY_ID,
         },
         signal: controller.signal,
       });

@@ -94,7 +94,10 @@ router.get('/api/sora', async (req, res) => {
     }
 
     const response = await fetch(MAS_API_URL, {
-      headers: { 'Accept': 'application/json' }
+      headers: {
+        'Accept': 'application/json',
+        'KeyId': 'b1933d67-f59a-4985-811c-5d6daf198a5d'
+      }
     });
     
     if (!response.ok) throw new Error(\`MAS API error: \${response.status}\`);
@@ -130,8 +133,9 @@ MAS_URL = "https://eservices.mas.gov.sg/api/action/datastore/search.json?resourc
 
 @app.get("/api/sora")
 async def get_sora_rates():
+    headers = {"KeyId": "b1933d67-f59a-4985-811c-5d6daf198a5d", "Accept": "application/json"}
     async with httpx.AsyncClient() as client:
-        resp = await client.get(MAS_URL, timeout=10.0)
+        resp = await client.get(MAS_URL, headers=headers, timeout=10.0)
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail="MAS API returned error")
         data = resp.json()
@@ -300,8 +304,12 @@ async def get_sora_rates():
             <div className="font-mono text-[11px] bg-slate-900 p-2 rounded border border-slate-850 break-all text-slate-300">
               {MAS_OFFICIAL_DATASTORE_URL}
             </div>
+            <div className="bg-slate-900/90 p-2.5 rounded border border-slate-800 flex items-center justify-between font-mono text-[11px]">
+              <span className="text-slate-400">Required Request Header:</span>
+              <span className="text-emerald-400 font-semibold">KeyId: b1933d67-f59a-4985-811c-5d6daf198a5d</span>
+            </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Published under the Singapore Open Data Licence. Daily published rates represent volume-weighted averages of overnight interbank SGD transactions.
+              Published under the Singapore Open Data Licence. All API queries automatically inject the required KeyId authentication header.
             </p>
           </div>
 
