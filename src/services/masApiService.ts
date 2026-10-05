@@ -1,10 +1,11 @@
 import { INITIAL_MAS_SORA_DATA } from '../data/historicalSora';
 import { ApiConfiguration, MASRateRecord } from '../types/sora';
 
+export const MAS_OFFICIAL_GATEWAY_URL =
+  'https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily';
+
 export const MAS_OFFICIAL_DATASTORE_URL =
   'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-308d-4bd2-832d-7680e649636b&limit=100&sort=end_of_day%20desc';
-
-export const REQUIRED_KEY_ID = 'b1933d67-f59a-4985-811c-5d6daf198a5d';
 
 export interface FetchResult {
   records: MASRateRecord[];
@@ -15,7 +16,7 @@ export interface FetchResult {
 
 export class MasApiService {
   /**
-   * Fetches SORA rate records from the configured source (MAS API or custom backend or fallback)
+   * Fetches SORA rate records from the configured source (Serverless /api/sora, MAS API, custom backend or fallback)
    */
   static async fetchSoraRates(config: ApiConfiguration): Promise<FetchResult> {
     if (config.mode === 'preloaded') {
@@ -26,22 +27,49 @@ export class MasApiService {
       };
     }
 
-    const targetUrl =
-      config.mode === 'custom_backend' && config.customBackendUrl
-        ? config.customBackendUrl
-        : MAS_OFFICIAL_DATASTORE_URL;
+    // Determine target URL: custom backend, or local serverless /api/sora, or direct MAS
+    let targetUrl = '/api/sora';
+    if (config.mode === 'custom_backend' && config.customBackendUrl) {
+      targetUrl = config.customBackendUrl;
+    } else if (config.mode === 'direct_mas') {
+      // First try the serverless /api/sora route
+      targetUrl = '/api/sora';
+    }
+
+    const clientKeyId =
+      (typeof process !== 'undefined' && process.env?.MAS_KEY_ID) ||
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_MAS_KEY_ID) ||
+      '';
 
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
-      const response = await fetch(targetUrl, {
-        headers: {
-          Accept: 'application/json',
-          KeyId: REQUIRED_KEY_ID,
-        },
-        signal: controller.signal,
-      });
+      const requestHeaders: Record<string, string> = {
+        Accept: 'application/json',
+      };
+      if (clientKeyId) {
+        requestHeaders['KeyId'] = clientKeyId;
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          headers: requestHeaders,
+          signal: controller.signal,
+        });
+      } catch (primaryErr) {
+        // If /api/sora is not responding (e.g. standalone Vite client preview), attempt fallback to public datastore
+        if (targetUrl === '/api/sora') {
+          targetUrl = MAS_OFFICIAL_DATASTORE_URL;
+          response = await fetch(targetUrl, {
+            headers: requestHeaders,
+            signal: controller.signal,
+          });
+        } else {
+          throw primaryErr;
+        }
+      }
 
       clearTimeout(timeoutId);
 

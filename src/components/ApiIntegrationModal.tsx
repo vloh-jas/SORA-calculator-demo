@@ -74,46 +74,40 @@ export const ApiIntegrationModal: React.FC<ApiIntegrationModalProps> = ({
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
-  const expressSnippet = `// Node.js + Express backend proxy for MAS SORA API
-// File: server/routes/sora.js
+  const expressSnippet = `// Node.js + Express / Serverless proxy for MAS SORA API
+// Route: /api/sora
 import express from 'express';
 const router = express.Router();
 
-const MAS_RESOURCE_ID = '9a0bf149-308d-4bd2-832d-7680e649636b';
-const MAS_API_URL = \`https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=\${MAS_RESOURCE_ID}&limit=100&sort=end_of_day%20desc\`;
+const MAS_API_URL = 'https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily';
 
-// In-memory cache for 1 hour to respect MAS rate limits
+// In-memory cache for 15 minutes to respect MAS rate limits
 let cachedData = null;
 let lastFetchTime = 0;
 
 router.get('/api/sora', async (req, res) => {
   try {
+    const keyId = process.env.MAS_KEY_ID || req.headers['keyid'];
+    if (!keyId) {
+      return res.status(401).json({ error: 'MAS_KEY_ID environment variable not set' });
+    }
+
     const now = Date.now();
-    if (cachedData && now - lastFetchTime < 3600000) {
+    if (cachedData && now - lastFetchTime < 15 * 60 * 1000) {
       return res.json({ source: 'cache', data: cachedData });
     }
 
     const response = await fetch(MAS_API_URL, {
       headers: {
         'Accept': 'application/json',
-        'KeyId': 'b1933d67-f59a-4985-811c-5d6daf198a5d'
+        'KeyId': keyId
       }
     });
     
     if (!response.ok) throw new Error(\`MAS API error: \${response.status}\`);
     const json = await response.json();
 
-    // Standardize MAS record array
-    cachedData = json.result.records.map(r => ({
-      end_of_day: r.end_of_day,
-      sora: parseFloat(r.sora),
-      sora_compound_1m: parseFloat(r.sora_compound_1m || 0),
-      sora_compound_3m: parseFloat(r.sora_compound_3m || 0),
-      sora_compound_6m: parseFloat(r.sora_compound_6m || 0),
-      sora_index: parseFloat(r.sora_index || 0),
-      aggregate_volume: parseFloat(r.aggregate_volume || 0),
-      calculation_method: r.calculation_method || 'standard'
-    }));
+    cachedData = json.data || json.result?.records || json;
     lastFetchTime = now;
 
     res.json({ source: 'mas_official', data: cachedData });
@@ -124,22 +118,27 @@ router.get('/api/sora', async (req, res) => {
 
 export default router;`;
 
-  const pythonSnippet = `# Python (FastAPI / Flask) MAS SORA Backend Proxy
+  const pythonSnippet = `# Python (FastAPI / Serverless) MAS SORA Backend Proxy
+import os
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 
 app = FastAPI()
-MAS_URL = "https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-308d-4bd2-832d-7680e649636b&limit=100&sort=end_of_day%20desc"
+MAS_URL = "https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily"
 
 @app.get("/api/sora")
-async def get_sora_rates():
-    headers = {"KeyId": "b1933d67-f59a-4985-811c-5d6daf198a5d", "Accept": "application/json"}
+async def get_sora_rates(keyid: str = Header(default=None)):
+    mas_key = os.getenv("MAS_KEY_ID") or keyid
+    if not mas_key:
+        raise HTTPException(status_code=401, detail="MAS_KEY_ID not configured")
+
+    headers = {"KeyId": mas_key, "Accept": "application/json"}
     async with httpx.AsyncClient() as client:
         resp = await client.get(MAS_URL, headers=headers, timeout=10.0)
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail="MAS API returned error")
         data = resp.json()
-        return {"data": data.get("result", {}).get("records", [])}`;
+        return {"data": data.get("data") or data.get("result", {}).get("records", [])}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
@@ -302,14 +301,14 @@ async def get_sora_rates():
               </a>
             </div>
             <div className="font-mono text-[11px] bg-slate-900 p-2 rounded border border-slate-850 break-all text-slate-300">
-              {MAS_OFFICIAL_DATASTORE_URL}
+              https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily
             </div>
             <div className="bg-slate-900/90 p-2.5 rounded border border-slate-800 flex items-center justify-between font-mono text-[11px]">
-              <span className="text-slate-400">Required Request Header:</span>
-              <span className="text-emerald-400 font-semibold">KeyId: b1933d67-f59a-4985-811c-5d6daf198a5d</span>
+              <span className="text-slate-400">Required Header:</span>
+              <span className="text-emerald-400 font-semibold">KeyId: &lt;MAS_KEY_ID&gt;</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Published under the Singapore Open Data Licence. All API queries automatically inject the required KeyId authentication header.
+              Serverless routes configured in <code className="text-slate-300">/api/sora.ts</code> and <code className="text-slate-300">/api/health.ts</code> automatically read <code className="text-slate-300">process.env.MAS_KEY_ID</code>.
             </p>
           </div>
 
